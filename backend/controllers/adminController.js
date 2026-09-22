@@ -70,9 +70,34 @@ const getDashboard = async (req, res, next) => {
 
 const getClasses = async (req, res, next) => {
     try {
-        const classes =
-            await SchoolClass.find()
-                .sort({ name: 1 });
+        const classes = await SchoolClass.find();
+
+classes.sort((a, b) => {
+    const getOrder = (name) => {
+        const match = name.match(/^Class\s+(\d+)/);
+
+        if (!match) return 999;
+
+        const classNumber = Number(match[1]);
+
+        if (classNumber <= 10) {
+            return classNumber * 10;
+        }
+
+        const streamOrder = {
+            PCM: 1,
+            PCB: 2,
+            Commerce: 3,
+            Arts: 4
+        };
+
+        const stream = name.split(" - ")[1] || "";
+
+        return classNumber * 10 + (streamOrder[stream] || 9);
+    };
+
+    return getOrder(a.name) - getOrder(b.name);
+});
 
         const classesWithCount =
             await Promise.all(
