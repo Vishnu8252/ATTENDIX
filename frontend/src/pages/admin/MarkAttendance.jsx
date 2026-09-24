@@ -1,6 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect */
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import api from "../../services/api";
@@ -9,32 +7,30 @@ function MarkAttendance() {
     const { id } = useParams();
     const navigate = useNavigate();
 
-    // =====================================================
-    // STATE
-    // =====================================================
-
     const [classData, setClassData] = useState(null);
+
     const [attendance, setAttendance] = useState({});
+    const [markedStudents, setMarkedStudents] = useState({});
 
     const [date, setDate] = useState(
         new Date().toISOString().split("T")[0]
     );
 
     const [loading, setLoading] = useState(true);
+    const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [saving, setSaving] = useState(false);
 
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
 
-    // =====================================================
-    // FETCH CLASS STUDENTS
-    // =====================================================
+    // =========================
+    // FETCH CLASS
+    // =========================
 
     const fetchClass = async () => {
         try {
             setLoading(true);
             setError("");
-            setMessage("");
 
             const response = await api.get(
                 `/admin/classes/${id}`
@@ -47,96 +43,190 @@ function MarkAttendance() {
                 );
             }
 
-            const data = response.data.data;
-
-            setClassData(data);
-
-            // Default every student to present
-            const initialAttendance = {};
-
-            data.students.forEach((student) => {
-                initialAttendance[student._id] = "present";
-            });
-
-            setAttendance(initialAttendance);
+            setClassData(response.data.data);
         } catch (error) {
             setError(
                 error.response?.data?.message ||
                 error.message ||
-                "Failed to load students"
+                "Failed to load class"
             );
         } finally {
             setLoading(false);
         }
     };
 
-    // =====================================================
-    // LOAD CLASS
-    // =====================================================
+    // =========================
+    // FETCH EXISTING ATTENDANCE
+    // =========================
+
+    const fetchAttendance = async () => {
+        try {
+            setAttendanceLoading(true);
+            setError("");
+            setMessage("");
+
+            const response = await api.get(
+                "/attendance",
+                {
+                    params: {
+                        classId: id,
+                        date
+                    }
+                }
+            );
+
+            if (!response.data?.success) {
+                throw new Error(
+                    response.data?.message ||
+                    "Failed to load attendance"
+                );
+            }
+
+            const records = response.data.data || [];
+
+            const existingAttendance = {};
+            const existingMarked = {};
+
+            records.forEach((record) => {
+                const studentId =
+                    record.student?._id ||
+                    record.student;
+
+                if (!studentId) return;
+
+                existingAttendance[studentId] =
+                    record.status;
+
+                existingMarked[studentId] = true;
+            });
+
+            setAttendance(existingAttendance);
+            setMarkedStudents(existingMarked);
+        } catch (error) {
+            setError(
+                error.response?.data?.message ||
+                error.message ||
+                "Failed to load attendance"
+            );
+        } finally {
+            setAttendanceLoading(false);
+        }
+    };
+
+    // =========================
+    // INITIAL LOAD
+    // =========================
 
     useEffect(() => {
         fetchClass();
     }, [id]);
 
-    // =====================================================
-    // CHANGE INDIVIDUAL STATUS
-    // =====================================================
+    useEffect(() => {
+        if (!classData) return;
 
-    const handleStatusChange = (studentId, status) => {
-        setAttendance((previousAttendance) => ({
-            ...previousAttendance,
+        fetchAttendance();
+    }, [id, date, classData]);
+
+    // =========================
+    // MARK ONE STUDENT
+    // =========================
+
+    const markStudent = (studentId, status) => {
+        setAttendance((previous) => ({
+            ...previous,
             [studentId]: status
         }));
 
-        setMessage("");
+        setMarkedStudents((previous) => ({
+            ...previous,
+            [studentId]: true
+        }));
+
         setError("");
+        setMessage("");
     };
 
-    // =====================================================
-    // MARK ALL
-    // =====================================================
+    // =========================
+    // MARK ALL PRESENT
+    // =========================
 
-    const markAll = (status) => {
-        if (!classData) {
-            return;
-        }
+    const markAllPresent = () => {
+        if (!classData) return;
 
-        const updatedAttendance = {};
+        const newAttendance = {};
+        const newMarked = {};
 
         classData.students.forEach((student) => {
-            updatedAttendance[student._id] = status;
+            newAttendance[student._id] = "present";
+            newMarked[student._id] = true;
         });
 
-        setAttendance(updatedAttendance);
+        setAttendance(newAttendance);
+        setMarkedStudents(newMarked);
 
-        setMessage("");
         setError("");
+        setMessage("");
     };
 
-    // =====================================================
-    // SAVE ATTENDANCE
-    // =====================================================
+    // =========================
+    // MARK ALL ABSENT
+    // =========================
+
+    const markAllAbsent = () => {
+        if (!classData) return;
+
+        const newAttendance = {};
+        const newMarked = {};
+
+        classData.students.forEach((student) => {
+            newAttendance[student._id] = "absent";
+            newMarked[student._id] = true;
+        });
+
+        setAttendance(newAttendance);
+        setMarkedStudents(newMarked);
+
+        setError("");
+        setMessage("");
+    };
+
+    // =========================
+    // MARKED STUDENTS
+    // =========================
+
+    const markedStudentsList = useMemo(() => {
+        if (!classData) return [];
+
+        return classData.students.filter(
+            (student) =>
+                markedStudents[student._id]
+        );
+    }, [classData, markedStudents]);
+
+    // =========================
+    // PENDING STUDENTS
+    // =========================
+
+    const pendingStudentsList = useMemo(() => {
+        if (!classData) return [];
+
+        return classData.students.filter(
+            (student) =>
+                !markedStudents[student._id]
+        );
+    }, [classData, markedStudents]);
+
+    // =========================
+    // SAVE
+    // =========================
 
     const handleSave = async () => {
-        if (!classData) {
-            return;
-        }
+        if (!classData) return;
 
-        if (classData.students.length === 0) {
+        if (markedStudentsList.length === 0) {
             setError(
-                "There are no students in this class."
+                "Please mark attendance for at least one student."
             );
-            return;
-        }
-
-        if (!date) {
-            setError(
-                "Please select an attendance date."
-            );
-            return;
-        }
-
-        if (saving) {
             return;
         }
 
@@ -144,19 +234,13 @@ function MarkAttendance() {
         setError("");
         setMessage("");
 
-        try {
-            // Prepare attendance payload
-            const attendanceData =
-                classData.students.map((student) => ({
-                    studentId: student._id,
-                    status:
-                        attendance[student._id] ||
-                        "present"
-                }));
+        const attendanceData =
+            markedStudentsList.map((student) => ({
+                studentId: student._id,
+                status: attendance[student._id]
+            }));
 
-            // Send selected class ID as well.
-            // Backend verifies that every student
-            // belongs to this class.
+        try {
             const response = await api.post(
                 "/attendance",
                 {
@@ -176,6 +260,8 @@ function MarkAttendance() {
             setMessage(
                 "Attendance saved successfully!"
             );
+
+            await fetchAttendance();
         } catch (error) {
             setError(
                 error.response?.data?.message ||
@@ -187,25 +273,25 @@ function MarkAttendance() {
         }
     };
 
-    // =====================================================
+    // =========================
     // LOADING
-    // =====================================================
+    // =========================
 
     if (loading) {
         return (
             <div className="admin-dashboard">
                 <div className="loading-state">
                     <h2>
-                        Loading students...
+                        Loading attendance...
                     </h2>
                 </div>
             </div>
         );
     }
 
-    // =====================================================
-    // ERROR WITHOUT CLASS DATA
-    // =====================================================
+    // =========================
+    // ERROR / NO CLASS
+    // =========================
 
     if (!classData) {
         return (
@@ -213,7 +299,7 @@ function MarkAttendance() {
                 <div className="error-state">
                     <h2>
                         {error ||
-                            "Failed to load class"}
+                            "Class not found"}
                     </h2>
 
                     <button
@@ -231,16 +317,12 @@ function MarkAttendance() {
         );
     }
 
-    // =====================================================
-    // PAGE
-    // =====================================================
-
     return (
         <div className="admin-dashboard">
 
-            {/* =================================================
-                BACK BUTTON
-            ================================================= */}
+            {/* =========================
+                HEADER
+            ========================= */}
 
             <button
                 type="button"
@@ -255,12 +337,7 @@ function MarkAttendance() {
                 ← Back to Class
             </button>
 
-            {/* =================================================
-                HEADER
-            ================================================= */}
-
             <div className="class-details-header">
-
                 <div>
                     <h1>
                         Mark Attendance
@@ -272,9 +349,8 @@ function MarkAttendance() {
                 </div>
 
                 <div className="attendance-date">
-
                     <label htmlFor="attendanceDate">
-                        Date
+                        Attendance Date
                     </label>
 
                     <input
@@ -282,48 +358,84 @@ function MarkAttendance() {
                         type="date"
                         value={date}
                         onChange={(e) => {
-                            setDate(e.target.value);
+                            setDate(
+                                e.target.value
+                            );
                             setMessage("");
                             setError("");
                         }}
-                        disabled={saving}
+                        disabled={
+                            saving ||
+                            attendanceLoading
+                        }
                     />
+                </div>
+            </div>
 
+            {/* =========================
+                SUMMARY
+            ========================= */}
+
+            <div className="attendance-summary">
+
+                <div className="attendance-summary-card">
+                    <span>Total Students</span>
+                    <strong>
+                        {classData.students.length}
+                    </strong>
+                </div>
+
+                <div className="attendance-summary-card marked">
+                    <span>Marked</span>
+                    <strong>
+                        {markedStudentsList.length}
+                    </strong>
+                </div>
+
+                <div className="attendance-summary-card pending">
+                    <span>Pending</span>
+                    <strong>
+                        {pendingStudentsList.length}
+                    </strong>
                 </div>
 
             </div>
 
-            {/* =================================================
-                BULK ACTIONS
-            ================================================= */}
+            {/* =========================
+                QUICK ACTIONS
+            ========================= */}
 
             <div className="attendance-actions">
 
                 <button
                     type="button"
-                    onClick={() =>
-                        markAll("present")
+                    onClick={markAllPresent}
+                    disabled={
+                        saving ||
+                        attendanceLoading ||
+                        classData.students.length === 0
                     }
-                    disabled={saving}
                 >
-                    Mark All Present
+                    ✓ Mark All Present
                 </button>
 
                 <button
                     type="button"
-                    onClick={() =>
-                        markAll("absent")
+                    onClick={markAllAbsent}
+                    disabled={
+                        saving ||
+                        attendanceLoading ||
+                        classData.students.length === 0
                     }
-                    disabled={saving}
                 >
-                    Mark All Absent
+                    ✕ Mark All Absent
                 </button>
 
             </div>
 
-            {/* =================================================
+            {/* =========================
                 MESSAGES
-            ================================================= */}
+            ========================= */}
 
             {error && (
                 <div className="error-message">
@@ -337,157 +449,329 @@ function MarkAttendance() {
                 </div>
             )}
 
-            {/* =================================================
-                STUDENTS
-            ================================================= */}
-
-            {classData.students.length === 0 ? (
-
-                <div className="empty-state">
-
+            {attendanceLoading ? (
+                <div className="loading-state">
                     <h3>
-                        No Students Found
+                        Loading attendance...
                     </h3>
-
-                    <p>
-                        Add students to this class
-                        before marking attendance.
-                    </p>
-
-                    <button
-                        type="button"
-                        onClick={() =>
-                            navigate(
-                                `/admin/classes/${id}/add-student`
-                            )
-                        }
-                    >
-                        + Add Student
-                    </button>
-
                 </div>
-
             ) : (
+                <>
+                    {/* ==================================================
+                        MARKED STUDENTS — TOP
+                    ================================================== */}
 
-                <div className="students-table">
+                    <section className="attendance-board marked-board">
 
-                    <table>
+                        <div className="attendance-board-header">
 
-                        <thead>
-                            <tr>
-                                <th>
-                                    Roll Number
-                                </th>
+                            <div>
+                                <span className="attendance-board-label">
+                                    COMPLETED
+                                </span>
 
-                                <th>
-                                    Name
-                                </th>
+                                <h2>
+                                    Marked Students
+                                </h2>
 
-                                <th>
-                                    Status
-                                </th>
-                            </tr>
-                        </thead>
+                                <p>
+                                    Students whose attendance
+                                    has been marked
+                                </p>
+                            </div>
 
-                        <tbody>
+                            <div className="attendance-board-count marked-count">
+                                {markedStudentsList.length}
+                            </div>
 
-                            {classData.students.map(
-                                (student) => {
+                        </div>
 
-                                    const status =
-                                        attendance[
-                                            student._id
-                                        ] || "present";
+                        {markedStudentsList.length === 0 ? (
+                            <div className="attendance-empty">
+                                <div className="attendance-empty-icon">
+                                    ✓
+                                </div>
 
-                                    return (
-                                        <tr
-                                            key={
+                                <h3>
+                                    No attendance marked yet
+                                </h3>
+
+                                <p>
+                                    Mark a student below and
+                                    they will appear here.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="attendance-student-list">
+
+                                {markedStudentsList.map(
+                                    (student) => {
+
+                                        const status =
+                                            attendance[
                                                 student._id
-                                            }
-                                        >
+                                            ];
 
-                                            <td>
-                                                {
-                                                    student.rollNumber
-                                                }
-                                            </td>
+                                        return (
+                                            <div
+                                                className="attendance-student-row marked-row"
+                                                key={student._id}
+                                            >
 
-                                            <td>
-                                                {
-                                                    student.fullName
-                                                }
-                                            </td>
+                                                <div className="student-number">
+                                                    {student.rollNumber}
+                                                </div>
 
-                                            <td>
+                                                <div className="student-info">
+                                                    <strong>
+                                                        {student.fullName}
+                                                    </strong>
 
-                                                <div className="attendance-status-actions">
+                                                    <span>
+                                                        Roll No.{" "}
+                                                        {student.rollNumber}
+                                                    </span>
+                                                </div>
+
+                                                <div className="student-status-buttons">
 
                                                     <button
                                                         type="button"
+                                                        className={
+                                                            status ===
+                                                            "present"
+                                                                ? "status-btn present active"
+                                                                : "status-btn present"
+                                                        }
                                                         onClick={() =>
-                                                            handleStatusChange(
+                                                            markStudent(
                                                                 student._id,
                                                                 "present"
                                                             )
                                                         }
-                                                        disabled={saving}
+                                                        disabled={
+                                                            saving
+                                                        }
                                                     >
                                                         Present
                                                     </button>
 
                                                     <button
                                                         type="button"
+                                                        className={
+                                                            status ===
+                                                            "absent"
+                                                                ? "status-btn absent active"
+                                                                : "status-btn absent"
+                                                        }
                                                         onClick={() =>
-                                                            handleStatusChange(
+                                                            markStudent(
                                                                 student._id,
                                                                 "absent"
                                                             )
                                                         }
-                                                        disabled={saving}
+                                                        disabled={
+                                                            saving
+                                                        }
                                                     >
                                                         Absent
                                                     </button>
 
-                                                    <span>
-                                                        {status}
-                                                    </span>
-
                                                 </div>
 
-                                            </td>
+                                                <div
+                                                    className={
+                                                        status ===
+                                                        "present"
+                                                            ? "current-status present-status"
+                                                            : "current-status absent-status"
+                                                    }
+                                                >
+                                                    {status ===
+                                                    "present"
+                                                        ? "✓ Present"
+                                                        : "✕ Absent"}
+                                                </div>
 
-                                        </tr>
-                                    );
-                                }
-                            )}
+                                            </div>
+                                        );
+                                    }
+                                )}
 
-                        </tbody>
+                            </div>
+                        )}
 
-                    </table>
+                    </section>
 
-                </div>
+                    {/* =========================
+                        HORIZONTAL DIVIDER
+                    ========================= */}
+
+                    <div className="attendance-divider">
+
+                        <div className="attendance-divider-line"></div>
+
+                        <div className="attendance-divider-content">
+                            <span>ATTENDANCE QUEUE</span>
+                        </div>
+
+                        <div className="attendance-divider-line"></div>
+
+                    </div>
+
+                    {/* ==================================================
+                        PENDING STUDENTS — BOTTOM
+                    ================================================== */}
+
+                    <section className="attendance-board pending-board">
+
+                        <div className="attendance-board-header">
+
+                            <div>
+                                <span className="attendance-board-label">
+                                    PENDING
+                                </span>
+
+                                <h2>
+                                    Students to Mark
+                                </h2>
+
+                                <p>
+                                    Mark Present or Absent to
+                                    move the student above
+                                </p>
+                            </div>
+
+                            <div className="attendance-board-count pending-count">
+                                {pendingStudentsList.length}
+                            </div>
+
+                        </div>
+
+                        {pendingStudentsList.length === 0 ? (
+                            <div className="attendance-all-done">
+
+                                <div className="attendance-done-icon">
+                                    ✓
+                                </div>
+
+                                <h3>
+                                    All students marked
+                                </h3>
+
+                                <p>
+                                    Attendance is complete for
+                                    this class.
+                                </p>
+
+                            </div>
+                        ) : (
+                            <div className="attendance-student-list">
+
+                                {pendingStudentsList.map(
+                                    (student) => (
+
+                                        <div
+                                            className="attendance-student-row pending-row"
+                                            key={student._id}
+                                        >
+
+                                            <div className="student-number">
+                                                {student.rollNumber}
+                                            </div>
+
+                                            <div className="student-info">
+                                                <strong>
+                                                    {student.fullName}
+                                                </strong>
+
+                                                <span>
+                                                    Roll No.{" "}
+                                                    {student.rollNumber}
+                                                </span>
+                                            </div>
+
+                                            <div className="pending-actions">
+
+                                                <button
+                                                    type="button"
+                                                    className="mark-present-button"
+                                                    onClick={() =>
+                                                        markStudent(
+                                                            student._id,
+                                                            "present"
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        saving
+                                                    }
+                                                >
+                                                    ✓ Present
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    className="mark-absent-button"
+                                                    onClick={() =>
+                                                        markStudent(
+                                                            student._id,
+                                                            "absent"
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        saving
+                                                    }
+                                                >
+                                                    ✕ Absent
+                                                </button>
+
+                                            </div>
+
+                                        </div>
+
+                                    )
+                                )}
+
+                            </div>
+                        )}
+
+                    </section>
+                </>
             )}
 
-            {/* =================================================
+            {/* =========================
                 SAVE
-            ================================================= */}
+            ========================= */}
 
             {classData.students.length > 0 && (
-
                 <div className="attendance-save">
+
+                    <div>
+                        <strong>
+                            {markedStudentsList.length}
+                        </strong>{" "}
+                        of{" "}
+                        <strong>
+                            {classData.students.length}
+                        </strong>{" "}
+                        students marked
+                    </div>
 
                     <button
                         type="button"
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={
+                            saving ||
+                            attendanceLoading ||
+                            markedStudentsList.length === 0
+                        }
                     >
                         {saving
-                            ? "Saving..."
+                            ? "Saving Attendance..."
                             : "Save Attendance"}
                     </button>
 
                 </div>
-
             )}
 
         </div>

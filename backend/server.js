@@ -4,6 +4,9 @@ dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 const express = require("express");
 const dotenv = require("dotenv");
+
+dotenv.config();
+
 const session = require("express-session");
 const MongoStore = require("connect-mongo").default;
 const cors = require("cors");
@@ -18,7 +21,6 @@ const attendanceRoutes = require("./routes/attendanceRoutes");
 
 const errorHandler = require("./middleware/errorMiddleware");
 
-dotenv.config();
 
 connectDB();
 

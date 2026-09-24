@@ -39,6 +39,12 @@ const studentSchema = new mongoose.Schema(
             required: true
         },
 
+        // Student profile photo
+        photo: {
+            type: String,
+            default: ""
+        },
+
         role: {
             type: String,
             default: "student",
@@ -50,7 +56,4 @@ const studentSchema = new mongoose.Schema(
     }
 );
 
-module.exports = mongoose.model(
-    "Student",
-    studentSchema
-);
+module.exports = mongoose.model("Student", studentSchema);

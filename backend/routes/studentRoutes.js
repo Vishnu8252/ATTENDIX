@@ -6,7 +6,9 @@ const {
     createStudent,
     updateStudent,
     deleteStudent,
-    getStudentsByClass
+    getStudentsByClass,
+    uploadStudentPhoto,
+    getMyProfile
 } = require("../controllers/studentController");
 
 const {
@@ -15,10 +17,31 @@ const {
 
 const authorizeRole = require("../middleware/roleMiddleware");
 
+const upload = require("../middleware/uploadMiddleware");
+
 const router = express.Router();
 
+router.get(
+    "/profile",
+    isAuthenticated,
+    authorizeRole("student"),
+    getMyProfile
+);
 // =====================================================
-// ADMIN AUTHORIZATION
+// STUDENT SELF PHOTO UPLOAD
+// =====================================================
+
+router.post(
+    "/profile/photo",
+    isAuthenticated,
+    authorizeRole("student"),
+    upload.single("photo"),
+    uploadStudentPhoto
+);
+
+
+// =====================================================
+// ADMIN ONLY ROUTES
 // =====================================================
 
 router.use(
@@ -26,44 +49,36 @@ router.use(
     authorizeRole("admin")
 );
 
-// =====================================================
-// STUDENTS
-// =====================================================
-
-// Get all students
 router.get(
     "/",
     getStudents
 );
 
-// Get students by class
 router.get(
     "/class/:classId",
     getStudentsByClass
 );
 
-// Get single student
 router.get(
     "/:id",
     getStudent
 );
 
-// Create student
 router.post(
     "/",
+    upload.single("photo"),
     createStudent
 );
 
-// Update student
 router.put(
     "/:id",
     updateStudent
 );
 
-// Delete student
 router.delete(
     "/:id",
     deleteStudent
 );
+
 
 module.exports = router;

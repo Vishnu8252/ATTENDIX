@@ -1,5 +1,5 @@
 const bcrypt = require("bcrypt");
-
+const cloudinary = require("../config/cloudinary");
 const Student = require("../models/Student");
 const SchoolClass = require("../models/SchoolClass");
 
@@ -80,21 +80,13 @@ const createStudent = async (req, res, next) => {
             });
         }
 
-        const normalizedName =
-            fullName.trim();
+        const normalizedName = fullName.trim();
+        const normalizedRollNumber = rollNumber.trim();
+        const normalizedEmail = email.trim().toLowerCase();
 
-        const normalizedRollNumber =
-            rollNumber.trim();
-
-        const normalizedEmail =
-            email.trim().toLowerCase();
-
-        // =====================================================
-        // VALIDATE CLASS
-        // =====================================================
-
-        const schoolClass =
-            await SchoolClass.findById(classId);
+        const schoolClass = await SchoolClass.findById(
+            classId
+        );
 
         if (!schoolClass) {
             return res.status(404).json({
@@ -103,22 +95,15 @@ const createStudent = async (req, res, next) => {
             });
         }
 
-        // =====================================================
-        // CHECK DUPLICATE STUDENT
-        // =====================================================
-
-        const existingStudent =
-            await Student.findOne({
-                $or: [
-                    {
-                        email: normalizedEmail
-                    },
-                    {
-                        rollNumber:
-                            normalizedRollNumber
-                    }
-                ]
-            });
+        const existingStudent = await Student.findOne({
+            $or: [
+                { email: normalizedEmail },
+                {
+                    rollNumber:
+                        normalizedRollNumber
+                }
+            ]
+        });
 
         if (existingStudent) {
             if (
@@ -144,36 +129,84 @@ const createStudent = async (req, res, next) => {
             }
         }
 
-        // =====================================================
-        // HASH PASSWORD
-        // =====================================================
+        // =========================
+        // UPLOAD PHOTO
+        // =========================
+
+        let photoUrl = "";
+
+        if (req.file) {
+            photoUrl = await new Promise(
+                (resolve, reject) => {
+                    const uploadStream =
+                        cloudinary.uploader.upload_stream(
+                            {
+                                folder:
+                                    "attendix/students",
+                                resource_type: "image",
+                                transformation: [
+                                    {
+                                        width: 500,
+                                        height: 500,
+                                        crop: "fill",
+                                        gravity: "face"
+                                    }
+                                ]
+                            },
+                            (error, result) => {
+                                if (error) {
+                                    reject(error);
+                                } else {
+                                    resolve(
+                                        result.secure_url
+                                    );
+                                }
+                            }
+                        );
+
+                    uploadStream.end(
+                        req.file.buffer
+                    );
+                }
+            );
+        }
+
+        // =========================
+        // PASSWORD HASH
+        // =========================
 
         const hashedPassword =
-            await bcrypt.hash(password, 12);
+            await bcrypt.hash(
+                password,
+                12
+            );
 
-        // =====================================================
+        // =========================
         // CREATE STUDENT
-        // =====================================================
+        // =========================
 
         const student =
             await Student.create({
                 fullName: normalizedName,
-                rollNumber: normalizedRollNumber,
+                rollNumber:
+                    normalizedRollNumber,
                 email: normalizedEmail,
                 class: classId,
                 dateOfBirth,
                 password: hashedPassword,
+                photo: photoUrl,
                 role: "student"
             });
 
-        // =====================================================
-        // RESPONSE WITHOUT PASSWORD
-        // =====================================================
-
         const studentResponse =
-            await Student.findById(student._id)
+            await Student.findById(
+                student._id
+            )
                 .select("-password")
-                .populate("class", "name");
+                .populate(
+                    "class",
+                    "name"
+                );
 
         return res.status(201).json({
             success: true,
@@ -408,7 +441,100 @@ const getStudentsByClass = async (
         next(error);
     }
 };
+const uploadStudentPhoto = async (req, res, next) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "Please select a photo"
+            });
+        }
 
+        const student = await Student.findById(
+            req.user.id
+        );
+
+        if (!student) {
+            return res.status(404).json({
+                success: false,
+                message: "Student not found"
+            });
+        }
+
+        const cloudinary = require("../config/cloudinary");
+
+        const photoUrl = await new Promise(
+            (resolve, reject) => {
+                const uploadStream =
+                    cloudinary.uploader.upload_stream(
+                        {
+                            folder:
+                                "attendix/students",
+                            resource_type: "image",
+                            transformation: [
+                                {
+                                    width: 500,
+                                    height: 500,
+                                    crop: "fill",
+                                    gravity: "face"
+                                }
+                            ]
+                        },
+                        (error, result) => {
+                            if (error) {
+                                reject(error);
+                            } else {
+                                resolve(
+                                    result.secure_url
+                                );
+                            }
+                        }
+                    );
+
+                uploadStream.end(
+                    req.file.buffer
+                );
+            }
+        );
+
+        student.photo = photoUrl;
+
+        await student.save();
+
+        return res.json({
+            success: true,
+            message:
+                "Profile photo uploaded successfully",
+            data: {
+                photo: student.photo
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getMyProfile = async (req, res, next) => {
+    try {
+        const student = await Student.findById(req.user.id)
+            .select("-password")
+            .populate("class", "name");
+
+        if (!student) {
+            return res.status(404).json({
+                success: false,
+                message: "Student profile not found"
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: student
+        });
+    } catch (error) {
+        next(error);
+    }
+};
 // =====================================================
 // EXPORT
 // =====================================================
@@ -419,5 +545,7 @@ module.exports = {
     createStudent,
     updateStudent,
     deleteStudent,
-    getStudentsByClass
+    getStudentsByClass,
+    uploadStudentPhoto,
+    getMyProfile
 };

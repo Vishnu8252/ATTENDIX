@@ -1,18 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import api from "../../services/api";
 
-
 function AddStudent() {
-
     const { id } = useParams();
     const navigate = useNavigate();
 
-
-    // =====================================================
-    // FORM STATE
-    // =====================================================
+    const [classData, setClassData] = useState(null);
 
     const [formData, setFormData] = useState({
         fullName: "",
@@ -22,119 +17,279 @@ function AddStudent() {
         password: ""
     });
 
+    const [photo, setPhoto] = useState(null);
+    const [photoPreview, setPhotoPreview] = useState("");
+
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
 
     const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
+    const [message, setMessage] = useState("");
 
+    // =========================
+    // LOAD CLASS
+    // =========================
 
-    // =====================================================
-    // HANDLE INPUT CHANGE
-    // =====================================================
+    useEffect(() => {
+        const fetchClass = async () => {
+            try {
+                setLoading(true);
+                setError("");
+
+                const response = await api.get(
+                    `/admin/classes/${id}`
+                );
+
+                if (!response.data?.success) {
+                    throw new Error(
+                        response.data?.message ||
+                        "Failed to load class"
+                    );
+                }
+
+                setClassData(
+                    response.data.data
+                );
+            } catch (error) {
+                setError(
+                    error.response?.data?.message ||
+                    error.message ||
+                    "Failed to load class"
+                );
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchClass();
+    }, [id]);
+
+    // =========================
+    // INPUT CHANGE
+    // =========================
 
     const handleChange = (e) => {
+        const { name, value } = e.target;
 
-        const {
-            name,
-            value
-        } = e.target;
-
-
-        setFormData((previousData) => ({
-            ...previousData,
+        setFormData((previous) => ({
+            ...previous,
             [name]: value
         }));
-    };
-
-
-    // =====================================================
-    // CREATE STUDENT
-    // =====================================================
-
-    const handleSubmit = async (e) => {
-
-        e.preventDefault();
 
         setError("");
+        setMessage("");
+    };
 
+    // =========================
+    // PHOTO CHANGE
+    // =========================
 
-        if (loading) {
+    const handlePhotoChange = (e) => {
+        const file = e.target.files?.[0];
+
+        if (!file) {
             return;
         }
 
+        const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+        ];
 
-        setLoading(true);
+        if (!allowedTypes.includes(file.type)) {
+            setError(
+                "Only JPG, PNG and WEBP images are allowed."
+            );
 
+            e.target.value = "";
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            setError(
+                "Photo size must be less than 5 MB."
+            );
+
+            e.target.value = "";
+            return;
+        }
+
+        setPhoto(file);
+
+        const previewUrl =
+            URL.createObjectURL(file);
+
+        setPhotoPreview(previewUrl);
+
+        setError("");
+        setMessage("");
+    };
+
+    // =========================
+    // REMOVE PHOTO
+    // =========================
+
+    const removePhoto = () => {
+        setPhoto(null);
+        setPhotoPreview("");
+
+        const photoInput =
+            document.getElementById(
+                "studentPhoto"
+            );
+
+        if (photoInput) {
+            photoInput.value = "";
+        }
+    };
+
+    // =========================
+    // SUBMIT
+    // =========================
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+
+        if (saving) {
+            return;
+        }
+
+        setError("");
+        setMessage("");
+
+        if (!formData.fullName.trim()) {
+            setError(
+                "Student name is required."
+            );
+            return;
+        }
+
+        if (!formData.rollNumber.trim()) {
+            setError(
+                "Roll number is required."
+            );
+            return;
+        }
+
+        if (!formData.email.trim()) {
+            setError(
+                "Email is required."
+            );
+            return;
+        }
+
+        if (!formData.dateOfBirth) {
+            setError(
+                "Date of birth is required."
+            );
+            return;
+        }
+
+        if (!formData.password) {
+            setError(
+                "Password is required."
+            );
+            return;
+        }
 
         try {
+            setSaving(true);
+
+            const data = new FormData();
+
+            data.append(
+                "fullName",
+                formData.fullName
+            );
+
+            data.append(
+                "rollNumber",
+                formData.rollNumber
+            );
+
+            data.append(
+                "email",
+                formData.email
+            );
+
+            data.append(
+                "class",
+                id
+            );
+
+            data.append(
+                "dateOfBirth",
+                formData.dateOfBirth
+            );
+
+            data.append(
+                "password",
+                formData.password
+            );
+
+            // Photo is optional
+            if (photo) {
+                data.append(
+                    "photo",
+                    photo
+                );
+            }
 
             const response = await api.post(
                 "/students",
-                {
-                    fullName:
-                        formData.fullName.trim(),
-
-                    rollNumber:
-                        formData.rollNumber.trim(),
-
-                    email:
-                        formData.email
-                            .trim()
-                            .toLowerCase(),
-
-                    dateOfBirth:
-                        formData.dateOfBirth,
-
-                    password:
-                        formData.password,
-
-                    class: id
-                }
+                data
             );
 
-
-            if (!response.data.success) {
-
+            if (!response.data?.success) {
                 throw new Error(
-                    response.data.message ||
+                    response.data?.message ||
                     "Failed to create student"
                 );
-
             }
 
-
-            // Student created successfully
-            navigate(
-                `/admin/classes/${id}`,
-                { replace: true }
+            setMessage(
+                "Student created successfully!"
             );
 
+            setTimeout(() => {
+                navigate(
+                    `/admin/classes/${id}`
+                );
+            }, 800);
         } catch (error) {
-
             setError(
                 error.response?.data?.message ||
                 error.message ||
                 "Failed to create student"
             );
-
         } finally {
-
-            setLoading(false);
-
+            setSaving(false);
         }
     };
 
+    // =========================
+    // LOADING
+    // =========================
 
-    // =====================================================
-    // PAGE
-    // =====================================================
+    if (loading) {
+        return (
+            <div className="admin-dashboard">
+                <div className="loading-state">
+                    <h2>
+                        Loading...
+                    </h2>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="admin-dashboard">
 
-
-            {/* =================================================
+            {/* =========================
                 BACK BUTTON
-            ================================================= */}
+            ========================= */}
 
             <button
                 type="button"
@@ -144,185 +299,295 @@ function AddStudent() {
                         `/admin/classes/${id}`
                     )
                 }
+                disabled={saving}
             >
                 ← Back to Class
             </button>
 
+            {/* =========================
+                HEADER
+            ========================= */}
 
-            {/* =================================================
-                PAGE HEADER
-            ================================================= */}
-
-            <div className="form-page-header">
-
+            <div className="class-details-header">
                 <div>
-
                     <h1>
                         Add Student
                     </h1>
 
                     <p>
-                        Create a new student for this class.
+                        Add a new student to{" "}
+                        {classData?.class?.name ||
+                            "this class"}
                     </p>
-
                 </div>
-
             </div>
 
-
-            {/* =================================================
+            {/* =========================
                 FORM
-            ================================================= */}
+            ========================= */}
 
             <div className="form-card">
 
+                <form
+                    onSubmit={handleSubmit}
+                >
 
-                {/* Error */}
+                    {/* =========================
+                        PHOTO
+                    ========================= */}
 
-                {error && (
+                    <div className="student-photo-upload">
 
-                    <div className="error-message">
-                        {error}
-                    </div>
+                        <div className="student-photo-preview">
 
-                )}
+                            {photoPreview ? (
+                                <img
+                                    src={
+                                        photoPreview
+                                    }
+                                    alt="Student preview"
+                                />
+                            ) : (
+                                <div className="student-photo-placeholder">
+                                    <span>
+                                        +
+                                    </span>
 
+                                    <small>
+                                        Photo
+                                    </small>
+                                </div>
+                            )}
 
-                <form onSubmit={handleSubmit}>
+                        </div>
 
+                        <div className="student-photo-controls">
 
-                    {/* Full Name */}
+                            <h3>
+                                Student Photo
+                            </h3>
 
-                    <div className="form-group">
+                            <p>
+                                JPG, PNG or WEBP
+                                · Maximum 5 MB
+                            </p>
 
-                        <label htmlFor="fullName">
-                            Full Name
-                        </label>
+                            <div className="student-photo-buttons">
 
-                        <input
-                            id="fullName"
-                            type="text"
-                            name="fullName"
-                            value={formData.fullName}
-                            onChange={handleChange}
-                            placeholder="Enter full name"
-                            autoComplete="name"
-                            required
-                        />
+                                <label
+                                    htmlFor="studentPhoto"
+                                    className="photo-upload-button"
+                                >
+                                    {photo
+                                        ? "Change Photo"
+                                        : "Upload Photo"}
+                                </label>
 
-                    </div>
+                                {photo && (
+                                    <button
+                                        type="button"
+                                        className="photo-remove-button"
+                                        onClick={
+                                            removePhoto
+                                        }
+                                        disabled={
+                                            saving
+                                        }
+                                    >
+                                        Remove
+                                    </button>
+                                )}
 
+                            </div>
 
-                    {/* Roll Number */}
+                            <input
+                                id="studentPhoto"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={
+                                    handlePhotoChange
+                                }
+                                hidden
+                            />
 
-                    <div className="form-group">
-
-                        <label htmlFor="rollNumber">
-                            Roll Number
-                        </label>
-
-                        <input
-                            id="rollNumber"
-                            type="text"
-                            name="rollNumber"
-                            value={formData.rollNumber}
-                            onChange={handleChange}
-                            placeholder="Enter roll number"
-                            required
-                        />
-
-                    </div>
-
-
-                    {/* Email */}
-
-                    <div className="form-group">
-
-                        <label htmlFor="email">
-                            Email
-                        </label>
-
-                        <input
-                            id="email"
-                            type="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            placeholder="Enter email"
-                            autoComplete="email"
-                            required
-                        />
-
-                    </div>
-
-
-                    {/* Date of Birth */}
-
-                    <div className="form-group">
-
-                        <label htmlFor="dateOfBirth">
-                            Date of Birth
-                        </label>
-
-                        <input
-                            id="dateOfBirth"
-                            type="date"
-                            name="dateOfBirth"
-                            value={formData.dateOfBirth}
-                            onChange={handleChange}
-                            required
-                        />
+                        </div>
 
                     </div>
 
+                    {/* =========================
+                        BASIC INFORMATION
+                    ========================= */}
 
-                    {/* Password */}
+                    <div className="form-grid">
 
-                    <div className="form-group">
+                        <div className="form-group">
 
-                        <label htmlFor="password">
-                            Password
-                        </label>
+                            <label htmlFor="fullName">
+                                Full Name
+                            </label>
 
-                        <input
-                            id="password"
-                            type="password"
-                            name="password"
-                            value={formData.password}
-                            onChange={handleChange}
-                            placeholder="Enter password"
-                            autoComplete="new-password"
-                            minLength={6}
-                            required
-                        />
+                            <input
+                                id="fullName"
+                                name="fullName"
+                                type="text"
+                                placeholder="Enter student name"
+                                value={
+                                    formData.fullName
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={saving}
+                            />
+
+                        </div>
+
+                        <div className="form-group">
+
+                            <label htmlFor="rollNumber">
+                                Roll Number
+                            </label>
+
+                            <input
+                                id="rollNumber"
+                                name="rollNumber"
+                                type="text"
+                                placeholder="Enter roll number"
+                                value={
+                                    formData.rollNumber
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={saving}
+                            />
+
+                        </div>
+
+                        <div className="form-group">
+
+                            <label htmlFor="email">
+                                Email
+                            </label>
+
+                            <input
+                                id="email"
+                                name="email"
+                                type="email"
+                                placeholder="student@example.com"
+                                value={
+                                    formData.email
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={saving}
+                            />
+
+                        </div>
+
+                        <div className="form-group">
+
+                            <label>
+                                Class
+                            </label>
+
+                            <input
+                                type="text"
+                                value={
+                                    classData?.class
+                                        ?.name || ""
+                                }
+                                disabled
+                            />
+
+                        </div>
+
+                        <div className="form-group">
+
+                            <label htmlFor="dateOfBirth">
+                                Date of Birth
+                            </label>
+
+                            <input
+                                id="dateOfBirth"
+                                name="dateOfBirth"
+                                type="date"
+                                value={
+                                    formData.dateOfBirth
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={saving}
+                            />
+
+                        </div>
+
+                        <div className="form-group">
+
+                            <label htmlFor="password">
+                                Login Password
+                            </label>
+
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                placeholder="Create password"
+                                value={
+                                    formData.password
+                                }
+                                onChange={
+                                    handleChange
+                                }
+                                disabled={saving}
+                            />
+
+                        </div>
 
                     </div>
 
+                    {/* =========================
+                        MESSAGES
+                    ========================= */}
 
-                    {/* FORM ACTIONS */}
+                    {error && (
+                        <div className="error-message">
+                            {error}
+                        </div>
+                    )}
+
+                    {message && (
+                        <div className="success-message">
+                            {message}
+                        </div>
+                    )}
+
+                    {/* =========================
+                        ACTIONS
+                    ========================= */}
 
                     <div className="form-actions">
 
                         <button
                             type="button"
-                            className="secondary-button"
                             onClick={() =>
                                 navigate(
                                     `/admin/classes/${id}`
                                 )
                             }
-                            disabled={loading}
+                            disabled={saving}
                         >
                             Cancel
                         </button>
 
-
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={saving}
                         >
-                            {loading
-                                ? "Creating..."
+                            {saving
+                                ? "Creating Student..."
                                 : "Create Student"}
                         </button>
 
@@ -331,10 +596,8 @@ function AddStudent() {
                 </form>
 
             </div>
-
         </div>
     );
 }
-
 
 export default AddStudent;
